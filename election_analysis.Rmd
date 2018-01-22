@@ -164,7 +164,7 @@ widget
 ```
 
 ```{r}
-saveWidget(widget, file = "election_map.html")
+#saveWidget(widget, file = "election_map.html")
 ```
 
 ```{r}
