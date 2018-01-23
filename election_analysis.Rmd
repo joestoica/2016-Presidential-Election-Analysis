@@ -1,7 +1,14 @@
 ---
 title: "2016 Election Exploratory Analysis"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE,
+                      warning=FALSE,
+                      message=FALSE)
+```
 
 ```{r}
 library("tmap")
@@ -11,8 +18,10 @@ library("leaflet")
 library("scales")
 library("htmlwidgets")
 library("htmltools")
+library(classInt)
 setwd(getwd())
 ```
+
 
 ```{r}
  # This file contains candidate votes by county from the 2016 election.
@@ -27,7 +36,6 @@ usshapefile <- "cb_2014_us_county_5m/cb_2014_us_county_5m.shp"
 usgeo <- read_shape(file = usshapefile, as.sf = TRUE)
 ```
 
-#Data Trimming
 ```{r}
 # Renaming for ease.
 colnames(usgeo)[5] <- "fips_code" 
@@ -92,6 +100,7 @@ df$hillary_pct <- hc$hillary_pct
 df$total_votes <- hc$total_votes
 
 df$trump_margin <- df$trump_votes - df$hillary_votes
+df$trump_pct_margin <- df$trump_pct - df$hillary_pct
 
 # Adds winner column to data frame.
 df <- transform(df, pres_winner = ifelse(df$hillary_pct > df$trump_pct, "Clinton", "Trump"))
@@ -106,16 +115,16 @@ min <- min(c(usmap$trump_pct, usmap$hillary_pct))
 max <- max(c(usmap$trump_pct, usmap$hillary_pct))
 
 # Creating color palettes
-gop_palette <- colorNumeric(palette = "Blues", domain=c(min, max))
-dem_palette <- colorNumeric(palette = "Reds", domain = c(min, max))
+dem_palette <- colorNumeric(palette = "Blues", domain=c(min, max))
+gop_palette <- colorNumeric(palette = "Reds", domain = c(min, max))
 winner_palette <- colorFactor(c("Blue","Red" ), domain = usmap$pres_winner)
 
 # Pop-up window for when you click on a county.
 uspopup <- paste("County: ", usmap$county, "<br>",
 "Winner: ", usmap$pres_winner, "<br>",
-"Trump: ", percent(usmap$trump_pct), "<br>",
-"Clinton: ", percent(usmap$hillary_pct), "<br>",
-"Margin: ", usmap$trump_margin, " votes.")
+"Trump: ", usmap$trump_votes, "votes (", percent(usmap$trump_pct), ") <br>",
+"Clinton: ", usmap$hillary_votes, "voes (", percent(usmap$hillary_pct), ") <br>",
+"Margin: ", usmap$trump_margin, "votes (", percent(abs( usmap$trump_pct_margin)), ")")
 ```
 
 
@@ -141,7 +150,7 @@ widget <- leaflet(usmap) %>%
        smoothFactor = 0.2, 
        fillOpacity = .75, 
        popup = uspopup, 
-       color = ~dem_palette(usmap$trump_pct),
+       color = ~gop_palette(usmap$trump_pct),
        group ="Trump"
       ) %>%
 
@@ -150,10 +159,10 @@ widget <- leaflet(usmap) %>%
               smoothFactor = 0.2, 
               fillOpacity = .75, 
               popup = uspopup, 
-              color = ~gop_palette(usmap$hillary_pct),
+              color = ~dem_palette(usmap$hillary_pct),
               group = "Clinton"
   ) %>%
-  
+  # Radio buttons 
   addLayersControl(
       baseGroups=c("Winners", "Trump", "Clinton"), # "College degs" "Other"
       position = "bottomleft",
@@ -169,21 +178,21 @@ widget
 
 ```{r}
 # This will eventually show a gradient across counties using marginal votes. 
-
-#testPalette <- colorRampPalette(c("Blue","White","Red" ))
-
+# 
+# testPalette <- colorRampPalette(c("Blue","White","Red" ))
+# 
 # palData <- classIntervals(usmap$trump_margin, style="quantile")
-# usmap$colors <- findColours(palData, winnerPalette(100))
+# usmap$colors <- findColours(palData, testPalette(100))
 # 
 # leaflet(usmap) %>%
-#   addProviderTiles("CartoDB.Positron") %>%
-#   addPolygons(stroke=TRUE,
-#               weight=1,
-#               smoothFactor = 0.2,
-#               fillOpacity = .75,
+#    addProviderTiles("CartoDB.Positron") %>%
+#    addPolygons(stroke=TRUE,
+#                weight=1,
+#                smoothFactor = 0.2,
+#                fillOpacity = .75,
 #               popup = uspopup,
-#               color = ~colors,
-#               group ="Winners"
-#  ) %>%
+#                color = ~colors,
+#                group ="Winners"
+#   ) %>%
 #     addLegend(position="bottomleft", colors=c("#3333FF", "#CD3700"), labels=c("Clinton", "Trump"))
 ```
