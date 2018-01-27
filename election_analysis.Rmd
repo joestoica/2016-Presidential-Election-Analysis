@@ -1,3 +1,4 @@
+
 ---
 title: "2016 Election Exploratory Analysis"
 output:
@@ -19,6 +20,7 @@ library("scales")
 library("htmlwidgets")
 library("htmltools")
 library(classInt)
+library(ggplot2)
 setwd(getwd())
 ```
 
@@ -136,13 +138,19 @@ usmap <- sf::st_transform(usmap, "+proj=longlat +datum=WGS84")
 widget <- leaflet(usmap) %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(stroke = TRUE,
+              dashArray = "3",
               weight = 1,
               smoothFactor = 0.2,
               fillOpacity = .75,
               popup = uspopup,
               color = ~winner_palette(usmap$pres_winner),
-              group ="Winners"
- ) %>%
+              group ="Winners",
+              highlight = highlightOptions(
+    weight = 5,
+    color = "#666",
+    dashArray = "",
+    fillOpacity = 0.7,
+    bringToFront = TRUE)) %>%
     addLegend(position = "bottomleft", colors = c("#3333FF", "#CD3700"), labels = c("Clinton", "Trump")) %>%
 
   addPolygons(stroke = TRUE,
@@ -179,10 +187,12 @@ widget
 ```{r}
 # This will eventually show a gradient across counties using marginal votes. 
 # 
-# testPalette <- colorRampPalette(c("Blue","White","Red" ))
-# 
+# t <- colorRampPalette(c("Blue","White","Red" ))
 # palData <- classIntervals(usmap$trump_margin, style="quantile")
-# usmap$colors <- findColours(palData, testPalette(100))
+# usmap$colors <- findColours(palData, testPalette(20))
+# 
+# bins <- seq( min(usmap$trump_margin), max(usmap$trump_margin), 10000)
+# pal <- colorBin(t(10000), domain = usmap$trump_margin, bins = bins)
 # 
 # leaflet(usmap) %>%
 #    addProviderTiles("CartoDB.Positron") %>%
@@ -190,8 +200,8 @@ widget
 #                weight=1,
 #                smoothFactor = 0.2,
 #                fillOpacity = .75,
-#               popup = uspopup,
-#                color = ~colors,
+#                popup = uspopup,
+#                fillColor = ~pal(trump_margin),
 #                group ="Winners"
 #   ) %>%
 #     addLegend(position="bottomleft", colors=c("#3333FF", "#CD3700"), labels=c("Clinton", "Trump"))
