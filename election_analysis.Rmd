@@ -12,13 +12,13 @@ knitr::opts_chunk$set(echo=FALSE,
 ```
 
 ```{r}
-library("tmap")
-library("tmaptools")
-library("sf")
-library("leaflet")
-library("scales")
-library("htmlwidgets")
-library("htmltools")
+library(tmap)
+library(tmaptools)
+library(sf)
+library(leaflet)
+library(scales)
+library(htmlwidgets)
+library(htmltools)
 library(classInt)
 library(ggplot2)
 setwd(getwd())
@@ -183,5 +183,7 @@ widget <-leaflet(usmap) %>%
       options = layersControlOptions(collapsed = FALSE)
       )
 
-#saveWidget(widget, getwd)
+widget
+
+saveWidget(widget, file = getwd)
 ```
