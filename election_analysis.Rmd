@@ -112,6 +112,8 @@ usmap <- append_data(usmap, df, key.shp = "fips", key.data = "fips")
 
 #Map Creation
 ```{r}
+usmap <- sf::st_transform(usmap, "+proj=longlat +datum=WGS84")
+
 # Finding the mix and max keep color scaling fair between candidates.
 min <- min(c(usmap$trump_pct, usmap$hillary_pct))
 max <- max(c(usmap$trump_pct, usmap$hillary_pct))
@@ -126,33 +128,34 @@ uspopup <- paste("County: ", usmap$county, "<br>",
 "Winner: ", usmap$pres_winner, "<br>",
 "Trump: ", usmap$trump_votes, "votes (", percent(usmap$trump_pct), ") <br>",
 "Clinton: ", usmap$hillary_votes, "voes (", percent(usmap$hillary_pct), ") <br>",
-"Margin: ", usmap$trump_margin, "votes (", percent(abs( usmap$trump_pct_margin)), ")")
-```
+"Margin: ", abs(usmap$trump_margin), "votes (", percent(abs( usmap$trump_pct_margin)), ")")
+
+# Thanks to professor McDonald for guiding me through this part!
+top = max(abs(c(min(usmap$trump_pct_margin),max(usmap$trump_pct_margin))))
+nbr = 1001
+br <- seq(-top,top,length.out = nbr)
+testPalette <- colorRampPalette(c("Blue","White","Red" ))(nbr)
+usmap$colors <- testPalette[cut(usmap$trump_pct_margin,br)]
 
 
-```{r}
-usmap <- sf::st_transform(usmap, "+proj=longlat +datum=WGS84")
-
-# Building the map!
-
-widget <- leaflet(usmap) %>%
+widget <-leaflet(usmap) %>%
   addProviderTiles("CartoDB.Positron") %>%
   addPolygons(stroke = TRUE,
-              dashArray = "3",
               weight = 1,
               smoothFactor = 0.2,
               fillOpacity = .75,
               popup = uspopup,
               color = ~winner_palette(usmap$pres_winner),
-              group ="Winners",
-              highlight = highlightOptions(
-    weight = 5,
-    color = "#666",
-    dashArray = "",
-    fillOpacity = 0.7,
-    bringToFront = TRUE)) %>%
-    addLegend(position = "bottomleft", colors = c("#3333FF", "#CD3700"), labels = c("Clinton", "Trump")) %>%
-
+              group ="County Winners") %>%
+  
+   addPolygons(stroke=TRUE,
+        weight=1,
+        smoothFactor = 0.2,
+        fillOpacity = .75,
+        popup = uspopup,
+        color = ~colors,
+        group ="Percent Margin") %>%
+  
   addPolygons(stroke = TRUE,
        weight = 1,
        smoothFactor = 0.2, 
@@ -170,39 +173,15 @@ widget <- leaflet(usmap) %>%
               color = ~dem_palette(usmap$hillary_pct),
               group = "Clinton"
   ) %>%
-  # Radio buttons 
+
+  addLegend(position = "bottomleft", colors = c("#3333FF", "#CD3700"), labels = c("Clinton", "Trump")) %>%
+
+  # Radio buttons
   addLayersControl(
-      baseGroups=c("Winners", "Trump", "Clinton"), # "College degs" "Other"
+      baseGroups=c("County Winners", "Percent Margin", "Trump", "Clinton"),
       position = "bottomleft",
       options = layersControlOptions(collapsed = FALSE)
-      ) 
+      )
 
-widget
-```
-
-```{r}
-#saveWidget(widget, file = "election_map.html")
-```
-
-```{r}
-# This will eventually show a gradient across counties using marginal votes. 
-# 
-# t <- colorRampPalette(c("Blue","White","Red" ))
-# palData <- classIntervals(usmap$trump_margin, style="quantile")
-# usmap$colors <- findColours(palData, testPalette(20))
-# 
-# bins <- seq( min(usmap$trump_margin), max(usmap$trump_margin), 10000)
-# pal <- colorBin(t(10000), domain = usmap$trump_margin, bins = bins)
-# 
-# leaflet(usmap) %>%
-#    addProviderTiles("CartoDB.Positron") %>%
-#    addPolygons(stroke=TRUE,
-#                weight=1,
-#                smoothFactor = 0.2,
-#                fillOpacity = .75,
-#                popup = uspopup,
-#                fillColor = ~pal(trump_margin),
-#                group ="Winners"
-#   ) %>%
-#     addLegend(position="bottomleft", colors=c("#3333FF", "#CD3700"), labels=c("Clinton", "Trump"))
+#saveWidget(widget, getwd)
 ```
