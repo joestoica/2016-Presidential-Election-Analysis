@@ -185,5 +185,5 @@ widget <-leaflet(usmap) %>%
 
 widget
 
-saveWidget(widget, file = getwd)
+saveWidget(widget, file = "map.html")
 ```
