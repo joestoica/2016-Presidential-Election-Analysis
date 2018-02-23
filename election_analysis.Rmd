@@ -8,7 +8,8 @@ output:
 ```{r global_options, include=FALSE}
 knitr::opts_chunk$set(echo=FALSE,
                       warning=FALSE,
-                      message=FALSE)
+                      message=FALSE,
+                      cache = TRUE)
 ```
 
 ```{r}
@@ -26,12 +27,12 @@ setwd(getwd())
 
 
 ```{r}
- # This file contains candidate votes by county from the 2016 election.
+# This file contains candidate votes by county from the 2016 election.
 primary <- read.csv("2016_election.csv")
 
 # This file contains party information. Only 2016 results will be used. 
-data <- read.csv("elections.csv") 
-e2016 <- subset(data, select = c("county","fips_code", "total_2016", "dem_2016", "gop_2016", "oth_2016"))
+e2016 <- read.csv("elections.csv") 
+e2016 <- subset(e2016)
 
 # This shapefile will be used in building maps. 
 usshapefile <- "cb_2014_us_county_5m/cb_2014_us_county_5m.shp" 
@@ -43,7 +44,7 @@ usgeo <- read_shape(file = usshapefile, as.sf = TRUE)
 colnames(usgeo)[5] <- "fips_code" 
 colnames(usgeo)[6] <- "county" 
 
-# Vote data did not contain U.S. territories.
+# Vote data did not include U.S. territories.
 usgeo <- usgeo[which(as.numeric(as.character(usgeo$fips_code)) <= 60000),] 
 
 # Removes leading zeroes from FIPS codes. 
@@ -57,10 +58,12 @@ e2016$oth_vote_pct <- e2016$oth_2016 / e2016$total_2016
 
 # Adding new column for the party winner of every county. 
 e2016 <- transform(e2016, winner = ifelse(e2016$dem_2016 > e2016$gop_2016 & e2016$dem_2016 > e2016$oth_2016, "Dem",
-                                   ifelse(e2016$gop_2016 > e2016$oth_2016 & e2016$gop_2016 > e2016$dem_2016, "GOP", "Other"))) 
+                                          ifelse(e2016$gop_2016 > e2016$oth_2016 & e2016$gop_2016 > e2016$dem_2016, "GOP", "Other"))) 
 
 # For some reason the election data did not contain Alaska, so we remove it (Alaska FIPS start with 2).
 usgeo <- usgeo[which(as.numeric(as.character(usgeo$STATEFP)) != 02),]
+
+# This removes Kalawao county. Was not included for some reason.
 usgeo <- usgeo[which(as.numeric(as.character(usgeo$fips_code)) != 15005),]
 
 # Ensuring order between the FIPS columns so they merge.
@@ -108,82 +111,129 @@ df$trump_pct_margin <- df$trump_pct - df$hillary_pct
 df <- transform(df, pres_winner = ifelse(df$hillary_pct > df$trump_pct, "Clinton", "Trump"))
 
 usmap <- append_data(usmap, df, key.shp = "fips", key.data = "fips")
+
+usmap <- subset(usmap, select = c("fips", "county","total_2016", "dem_2016", "gop_2016", "oth_2016", "dem_vote_pct", "gop_vote_pct", "oth_vote_pct", "winner", "county.data.1", "trump_votes", "trump_pct", "hillary_votes", "hillary_pct", "total_votes", "trump_margin", "trump_pct_margin", "pres_winner", "geometry"))
+
 ```
 
-#Map Creation
-```{r}
-usmap <- sf::st_transform(usmap, "+proj=longlat +datum=WGS84")
 
-# Finding the mix and max keep color scaling fair between candidates.
+```{r}
+county_demographics <- read.csv("county_facts.csv")
+names(county_demographics)[1] <- "fips_code"
+names(county_demographics)[2] <- "county"
+
+county_demographics <- subset(county_demographics, select = c("fips_code", "county", "state_abbreviation", "PST045214","AGE135214","AGE295214","AGE775214","SEX255214","RHI125214","RHI225214","RHI725214","POP645213","POP815213","EDU635213","EDU685213","VET605213","INC910213","INC110213","PVY020213"))
+
+names(county_demographics) <- c("fips_code", "county", "state_abbreviation", "pop_2014", "under_five", "under_eighteen", "over_65", "female", "white", "black", "hispanic", "foreign_born", "other_language", "high_school_grad", "bachelors_degree", "veterans", "income_per_capita", "median_household","below_poverty")
+
+# Removing Alaska
+county_demographics <- subset(county_demographics, county_demographics$state_abbreviation != "AK")
+
+# Removes the United States Entry
+county_demographics <- subset(county_demographics, county_demographics$fips_code != "0")
+
+# Removes two counties not in the voting data
+county_demographics <- subset(county_demographics, county_demographics$fips_code != "15005")
+county_demographics <- subset(county_demographics, county_demographics$fips_code != "51515")
+
+# Removes the state totals rows
+county_demographics <- subset(county_demographics, county_demographics$state_abbreviation != "")
+
+county_demographics <- county_demographics[order(county_demographics$fips_code),]
+```
+
+
+
+#Map Variables
+```{r}
+# Finding the min and max of each candidate to scale correctly
 min <- min(c(usmap$trump_pct, usmap$hillary_pct))
 max <- max(c(usmap$trump_pct, usmap$hillary_pct))
 
 # Creating color palettes
 dem_palette <- colorNumeric(palette = "Blues", domain=c(min, max))
 gop_palette <- colorNumeric(palette = "Reds", domain = c(min, max))
-winner_palette <- colorFactor(c("Blue","Red" ), domain = usmap$pres_winner)
+winner_palette <- colorFactor(c("#0000ff", "#ff1a1a"), domain = usmap$pres_winner)
 
-# Pop-up window for when you click on a county.
-uspopup <- paste("County: ", usmap$county, "<br>",
-"Winner: ", usmap$pres_winner, "<br>",
-"Trump: ", usmap$trump_votes, "votes (", percent(usmap$trump_pct), ") <br>",
-"Clinton: ", usmap$hillary_votes, "voes (", percent(usmap$hillary_pct), ") <br>",
-"Margin: ", abs(usmap$trump_margin), "votes (", percent(abs( usmap$trump_pct_margin)), ")")
 
-# Thanks to professor McDonald for guiding me through this part!
-top = max(abs(c(min(usmap$trump_pct_margin),max(usmap$trump_pct_margin))))
+# Thanks to Dr. McDonald for his guidance on separating the colors.
+top = max(abs(c(min(usmap$trump_pct_margin), max(usmap$trump_pct_margin))))
 nbr = 1001
 br <- seq(-top,top,length.out = nbr)
 testPalette <- colorRampPalette(c("Blue","White","Red" ))(nbr)
 usmap$colors <- testPalette[cut(usmap$trump_pct_margin,br)]
 
 
-widget <-leaflet(usmap) %>%
-  addProviderTiles("CartoDB.Positron") %>%
-  addPolygons(stroke = TRUE,
-              weight = 1,
-              smoothFactor = 0.2,
-              fillOpacity = .75,
-              popup = uspopup,
-              color = ~winner_palette(usmap$pres_winner),
-              group ="County Winners") %>%
-  
-   addPolygons(stroke=TRUE,
-        weight=1,
-        smoothFactor = 0.2,
-        fillOpacity = .75,
-        popup = uspopup,
-        color = ~colors,
-        group ="Percent Margin") %>%
-  
-  addPolygons(stroke = TRUE,
-       weight = 1,
-       smoothFactor = 0.2, 
-       fillOpacity = .75, 
-       popup = uspopup, 
-       color = ~gop_palette(usmap$trump_pct),
-       group ="Trump"
-      ) %>%
+# Pop-up window for when you click on a county.
+uspopup <- paste("County: ", usmap$county, "<br>",
+                 "Winner: ", usmap$pres_winner, "<br>",
+                 "Trump: ", usmap$trump_votes, "votes (", percent(usmap$trump_pct), ") <br>",
+                 "Clinton: ", usmap$hillary_votes, "votes (", percent(usmap$hillary_pct), ") <br>",
+                 "Margin: ", abs(usmap$trump_margin), "votes (", percent(abs( usmap$trump_pct_margin)), ")")
 
-  addPolygons(stroke = TRUE,
-              weight = 1,
-              smoothFactor = 0.2, 
-              fillOpacity = .75, 
+# Defining Constants to use in the map creation.
+constant_weight <- 1
+constant_fill_opacity <- 0.5
+
+# Highlight settings. We make the weight heavier to make it more obvious when hovering over a county.
+map_highlight <- highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE)
+```
+
+# Map Creation
+```{r}
+
+# This was suggested in the Computerworld article to correct inconsistent datum.
+usmap <- sf::st_transform(usmap, "+proj=longlat +datum=WGS84")
+
+widget <- leaflet(usmap) %>%
+  
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  addPolygons(weight = constant_weight,
+              fillOpacity = constant_fill_opacity,
+              popup = uspopup,
+              color = ~ winner_palette(usmap$pres_winner),
+              group ="County Winners",
+              highlightOptions = map_highlight) %>%
+  
+  addPolygons(weight = 1,
+              fillOpacity = constant_fill_opacity,
+              popup = uspopup,
+              color = ~colors,
+              group ="Percent Margin",
+              highlightOptions = map_highlight) %>%
+  
+  addPolygons(weight = constant_weight,
+              fillOpacity = constant_fill_opacity, 
+              popup = uspopup, 
+              color = ~gop_palette(usmap$trump_pct),
+              group ="Trump",
+              highlightOptions = map_highlight) %>%
+  
+  addPolygons(weight = constant_weight,
+              fillOpacity = constant_fill_opacity,
               popup = uspopup, 
               color = ~dem_palette(usmap$hillary_pct),
-              group = "Clinton"
-  ) %>%
-
-  addLegend(position = "bottomleft", colors = c("#3333FF", "#CD3700"), labels = c("Clinton", "Trump")) %>%
-
-  # Radio buttons
+              group = "Clinton",
+              highlightOptions = map_highlight) %>%
+  
+  addLegend(position = "bottomleft", colors = c("#0000ff", "#ff1a1a"), labels = c("Clinton", "Trump")) %>%
+  
+  
   addLayersControl(
-      baseGroups=c("County Winners", "Percent Margin", "Trump", "Clinton"),
-      position = "bottomleft",
-      options = layersControlOptions(collapsed = FALSE)
-      )
+    baseGroups=c("County Winners", "Percent Margin", "Trump", "Clinton"),
+    position = "bottomleft",
+    options = layersControlOptions(collapsed = FALSE)
+  )
 
 widget
+```
 
-saveWidget(widget, file = "map.html")
+```{r}
+#saveWidget(widget, file = "map.html")
 ```
