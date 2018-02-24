@@ -112,7 +112,7 @@ df <- transform(df, pres_winner = ifelse(df$hillary_pct > df$trump_pct, "Clinton
 
 usmap <- append_data(usmap, df, key.shp = "fips", key.data = "fips")
 
-usmap <- subset(usmap, select = c("fips", "county","total_2016", "dem_2016", "gop_2016", "oth_2016", "dem_vote_pct", "gop_vote_pct", "oth_vote_pct", "winner", "county.data.1", "trump_votes", "trump_pct", "hillary_votes", "hillary_pct", "total_votes", "trump_margin", "trump_pct_margin", "pres_winner", "geometry"))
+usmap <- subset(usmap, select = c("fips", "county","total_2016", "dem_2016", "gop_2016", "oth_2016", "dem_vote_pct", "gop_vote_pct", "oth_vote_pct", "winner", "trump_votes", "trump_pct", "hillary_votes", "hillary_pct", "total_votes", "trump_margin", "trump_pct_margin", "pres_winner", "geometry"))
 
 ```
 
@@ -140,8 +140,25 @@ county_demographics <- subset(county_demographics, county_demographics$fips_code
 county_demographics <- subset(county_demographics, county_demographics$state_abbreviation != "")
 
 county_demographics <- county_demographics[order(county_demographics$fips_code),]
+
+county_demographics <- subset(county_demographics, select = c("fips_code", "pop_2014", "under_five", "under_eighteen", "over_65", "female", "white", "black", "hispanic", "foreign_born", "other_language", "high_school_grad", "bachelors_degree", "veterans", "income_per_capita", "median_household","below_poverty"))
+# Making sure the two columns are identical before we merge them
+identical(usmap$fips, county_demographics$fips_code)
+
+usmap <- append_data(usmap, county_demographics, key.shp = "fips", key.data = "fips_code")
 ```
 
+```{r}
+# Create a new column of the percentage of people who can vote
+usmap$voting_pop <- 100 - usmap$under_five - usmap$under_eighteen
+
+# Create new column of percentage of men
+usmap$male <- 100 - usmap$female
+
+# Reordering columns to make data easier to look at
+usmap <- subset(usmap, select = c("fips", "county", "winner", "pres_winner", "total_2016", "dem_2016", "gop_2016", "oth_2016", "dem_vote_pct", "gop_vote_pct", "oth_vote_pct", "trump_votes", "trump_pct", "hillary_votes", "hillary_pct", "total_votes", "trump_margin", "trump_pct_margin", "pop_2014", "under_five", "under_eighteen", "voting_pop", "over_65", "male", "female", "white", "black", "hispanic", "foreign_born", "other_language", "high_school_grad", "bachelors_degree", "veterans", "income_per_capita", "median_household", "below_poverty", "geometry"))
+
+```
 
 
 #Map Variables
