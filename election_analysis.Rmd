@@ -30,16 +30,16 @@ setwd(getwd())
 
 ```{r data in}
 # This file contains candidate votes by county from the 2016 election.
-primary <- read.csv("2016_election.csv")
+primary <- read.csv("data/2016_election.csv")
 
 # This file contains party information. Only 2016 results will be used. 
-elections <- read.csv("elections.csv") 
+elections <- read.csv("data/elections.csv") 
 e2016 <- elections %>% 
   select(fips_code, county, total_2016, dem_2016, gop_2016, oth_2016)
 rm(elections)
 
 # This shapefile will be used in building maps. 
-usshapefile <- "cb_2014_us_county_5m/cb_2014_us_county_5m.shp" 
+usshapefile <- "data/cb_2014_us_county_5m/cb_2014_us_county_5m.shp" 
 usgeo <- read_shape(file = usshapefile, as.sf = TRUE)
 ```
 
@@ -213,5 +213,5 @@ widget
 ```
 
 ```{r}
-#saveWidget(widget, file = "map.html")
+saveWidget(widget, file = "map.html")
 ```
