@@ -1,18 +1,18 @@
-
 ---
-title: "2016 Election Exploratory Analysis"
+title: "2016 Election Exploratory Mapping"
+Author: Joe Stoica 
 output:
   html_document:
     df_print: paged
 ---
+
 ```{r global_options, include=FALSE}
 knitr::opts_chunk$set(echo=FALSE,
                       warning=FALSE,
                       message=FALSE,
                       cache = TRUE)
-```
 
-```{r}
+library(tidyverse)
 library(tmap)
 library(tmaptools)
 library(sf)
@@ -22,161 +22,124 @@ library(htmlwidgets)
 library(htmltools)
 library(classInt)
 library(ggplot2)
+library(randomForest)
+library(knitr)
+library(magrittr)
 setwd(getwd())
 ```
 
-
-```{r}
+```{r data in}
 # This file contains candidate votes by county from the 2016 election.
 primary <- read.csv("2016_election.csv")
 
 # This file contains party information. Only 2016 results will be used. 
-e2016 <- read.csv("elections.csv") 
-e2016 <- subset(e2016)
+elections <- read.csv("elections.csv") 
+e2016 <- elections %>% 
+  select(fips_code, county, total_2016, dem_2016, gop_2016, oth_2016)
+rm(elections)
 
 # This shapefile will be used in building maps. 
 usshapefile <- "cb_2014_us_county_5m/cb_2014_us_county_5m.shp" 
 usgeo <- read_shape(file = usshapefile, as.sf = TRUE)
 ```
 
-```{r}
-# Renaming for ease.
+```{r usgeo clean}
 colnames(usgeo)[5] <- "fips_code" 
 colnames(usgeo)[6] <- "county" 
 
-# Vote data did not include U.S. territories.
-usgeo <- usgeo[which(as.numeric(as.character(usgeo$fips_code)) <= 60000),] 
-
 # Removes leading zeroes from FIPS codes. 
 usgeo$fips_code <- gsub("(^|[^0-9])0+", "\\1", usgeo$fips_code, perl = TRUE) 
-usgeo$fips_code <- as.integer(usgeo$fips_code) 
 
-# These are by party.
-e2016$dem_vote_pct <- e2016$dem_2016 / e2016$total_2016
-e2016$gop_vote_pct <- e2016$gop_2016 / e2016$total_2016
-e2016$oth_vote_pct <- e2016$oth_2016 / e2016$total_2016
+# # Voting data did not include U.S. territories, so we remove codes below 60000.
+usgeo <- usgeo %>%
+  filter(as.integer(fips_code) <= 60000) %>%
+  # For some reason the election data did not contain Alaska, so we remove it (Alaska FIPS start with 2).
+  filter(as.integer(STATEFP) != 02) %>%
+  # This removes Kalawao county, which was not included for some reason.
+  filter(fips_code != 15005) %>%
+  arrange(fips_code)
 
-# Adding new column for the party winner of every county. 
-e2016 <- transform(e2016, winner = ifelse(e2016$dem_2016 > e2016$gop_2016 & e2016$dem_2016 > e2016$oth_2016, "Dem",
-                                          ifelse(e2016$gop_2016 > e2016$oth_2016 & e2016$gop_2016 > e2016$dem_2016, "GOP", "Other"))) 
-
-# For some reason the election data did not contain Alaska, so we remove it (Alaska FIPS start with 2).
-usgeo <- usgeo[which(as.numeric(as.character(usgeo$STATEFP)) != 02),]
-
-# This removes Kalawao county. Was not included for some reason.
-usgeo <- usgeo[which(as.numeric(as.character(usgeo$fips_code)) != 15005),]
-
-# Ensuring order between the FIPS columns so they merge.
-usgeo <- usgeo[order(usgeo$fips_code),]
-e2016 <- e2016[order(e2016$fips_code),]
-
-# This is a precautionary renaming to make sure the append goes smoothly.
-names(usgeo)[5] <- "fips"
-usmap <- append_data(usgeo, e2016, key.shp = "fips", key.data = "fips_code")
 ```
 
+```{r election 2016 clean}
+e2016$fips_code <- as.character(e2016$fips_code) 
 
-```{r}
-# Note: In 2016_election.csv, I edited the names of counties to remove "county" from the end of every county. I also removed "parish" and "city."
+# Creating new columns for vote percentage by party
+e2016 <- e2016 %>% 
+  mutate(dem_vote_pct = e2016$dem_2016 / e2016$total_2016) %>% 
+  mutate(gop_vote_pct = e2016$gop_2016 / e2016$total_2016) %>% 
+  mutate(oth_vote_pct = e2016$oth_2016 / e2016$total_2016) %>% 
+  mutate(most_votes = apply(cbind(e2016$dem_2016, e2016$gop_2016, e2016$oth_2016), 1, max)) %>% 
+  mutate(winner = ifelse(most_votes == e2016$gop_2016, "gop",
+                         ifelse(most_votes == e2016$dem_2016, "dem", "oth"))) %>% 
+  select(-most_votes) %>% 
+  arrange(fips_code)
+```
+
+```{r combine data}
+usmap <- append_data(shp = usgeo, data = e2016)
+# Note: In 2016_election.csv, I edited the names of counties to remove "county" from the end of every county. I also removed "parish" and "city." When I get time I'll do this in R for reproduceability's sake
+
 # Important: Carson City, Nevada, Charles City, VA, and James City, VA all need to keep "city"" in their name.
-# Dona Ana is messed up, run this in console once to fix it: usmap["1576", "county"] = "Dona Ana"
+# Dona Ana is messed up
+usmap["1576", "county"] <-  "Dona Ana"
+names(usmap)[5] <- "fips"
+usmap <- usmap %>% 
+  filter(fips != 11001)
 
-# dt is a data frame to organize Donald Trump's data. There is probably a cleaner way to do this. Will come back later.
-dt <- subset(primary, cand == "Donald Trump")
-dt <- subset(dt, !is.na(county))
-dt$fips <- as.integer(as.character(dt$fips))
-dt <- dt[order(as.integer(as.character(dt$fips))),]
-
-# Same thing as above but with Hillary.
-hc <- subset(primary, cand == "Hillary Clinton")
-hc <- subset(hc, !is.na(county))
-hc$fips <- as.integer(as.character(hc$fips))
-hc <-hc[order(as.integer(as.character(hc$fips))),]
-
-names(dt)[6] <- "trump_votes"
-names(dt)[9] <- "trump_pct"
-df <- subset(dt, select = c("county", "fips", "trump_votes", "trump_pct"))
-
-names(hc)[6] <- "hillary_votes"
-names(hc)[9] <- "hillary_pct"
-
-df$hillary_votes <- hc$hillary_votes
-df$hillary_pct <- hc$hillary_pct
-df$total_votes <- hc$total_votes
-
-df$trump_margin <- df$trump_votes - df$hillary_votes
-df$trump_pct_margin <- df$trump_pct - df$hillary_pct
-
-# Adds winner column to data frame.
-df <- transform(df, pres_winner = ifelse(df$hillary_pct > df$trump_pct, "Clinton", "Trump"))
-
-usmap <- append_data(usmap, df, key.shp = "fips", key.data = "fips")
-
-usmap <- subset(usmap, select = c("fips", "county","total_2016", "dem_2016", "gop_2016", "oth_2016", "dem_vote_pct", "gop_vote_pct", "oth_vote_pct", "winner", "trump_votes", "trump_pct", "hillary_votes", "hillary_pct", "total_votes", "trump_margin", "trump_pct_margin", "pres_winner", "geometry"))
-
+rm(usgeo, e2016)
 ```
 
+```{r candidate data}
+final_primary <- primary %>% 
+  filter(cand == "Hillary Clinton" | cand == "Donald Trump") %>% 
+  na.omit(county) %>% 
+  select(county, fips, cand, votes, total_votes) %>% 
+  spread(cand, votes) 
 
-```{r}
-county_demographics <- read.csv("county_facts.csv")
-names(county_demographics)[1] <- "fips_code"
-names(county_demographics)[2] <- "county"
+# TODO piping rename function?
+names(final_primary)[cbind(4,5)] <- c("trump", "clinton")
 
-county_demographics <- subset(county_demographics, select = c("fips_code", "county", "state_abbreviation", "PST045214","AGE135214","AGE295214","AGE775214","SEX255214","RHI125214","RHI225214","RHI725214","POP645213","POP815213","EDU635213","EDU685213","VET605213","INC910213","INC110213","PVY020213"))
+final_primary <- final_primary %>% 
+  mutate(clinton_pct = clinton / total_votes) %>% 
+  mutate(trump_pct = trump / total_votes) %>% 
+  mutate(trump_margin = trump - clinton) %>% 
+  mutate(trump_pct_margin = trump_pct - clinton_pct) %>% 
+  mutate(pres_winner = ifelse(trump_pct_margin <= 0, "Clinton", "Trump"))
 
-names(county_demographics) <- c("fips_code", "county", "state_abbreviation", "pop_2014", "under_five", "under_eighteen", "over_65", "female", "white", "black", "hispanic", "foreign_born", "other_language", "high_school_grad", "bachelors_degree", "veterans", "income_per_capita", "median_household","below_poverty")
+usmap <- append_data(usmap, final_primary, key.shp = "fips", key.data = "fips")
 
-# Removing Alaska
-county_demographics <- subset(county_demographics, county_demographics$state_abbreviation != "AK")
+usmap <- usmap %>% 
+  select(fips, county, winner, total_2016, dem_2016, gop_2016, oth_2016, 
+         dem_vote_pct, gop_vote_pct, oth_vote_pct, pres_winner, clinton, trump,
+         clinton_pct, trump_pct, trump_margin, trump_pct_margin, geometry) 
 
-# Removes the United States Entry
-county_demographics <- subset(county_demographics, county_demographics$fips_code != "0")
+usmap$fips <- as.integer(usmap$fips)
 
-# Removes two counties not in the voting data
-county_demographics <- subset(county_demographics, county_demographics$fips_code != "15005")
-county_demographics <- subset(county_demographics, county_demographics$fips_code != "51515")
-
-# Removes the state totals rows
-county_demographics <- subset(county_demographics, county_demographics$state_abbreviation != "")
-
-county_demographics <- county_demographics[order(county_demographics$fips_code),]
-
-county_demographics <- subset(county_demographics, select = c("fips_code", "pop_2014", "under_five", "under_eighteen", "over_65", "female", "white", "black", "hispanic", "foreign_born", "other_language", "high_school_grad", "bachelors_degree", "veterans", "income_per_capita", "median_household","below_poverty"))
-# Making sure the two columns are identical before we merge them
-identical(usmap$fips, county_demographics$fips_code)
-
-usmap <- append_data(usmap, county_demographics, key.shp = "fips", key.data = "fips_code")
+rm(primary)
 ```
 
-```{r}
-# Create a new column of the percentage of people who can vote
-usmap$voting_pop <- 100 - usmap$under_five - usmap$under_eighteen
-
-# Create new column of percentage of men
-usmap$male <- 100 - usmap$female
-
-# Reordering columns to make data easier to look at
-usmap <- subset(usmap, select = c("fips", "county", "winner", "pres_winner", "total_2016", "dem_2016", "gop_2016", "oth_2016", "dem_vote_pct", "gop_vote_pct", "oth_vote_pct", "trump_votes", "trump_pct", "hillary_votes", "hillary_pct", "total_votes", "trump_margin", "trump_pct_margin", "pop_2014", "under_five", "under_eighteen", "voting_pop", "over_65", "male", "female", "white", "black", "hispanic", "foreign_born", "other_language", "high_school_grad", "bachelors_degree", "veterans", "income_per_capita", "median_household", "below_poverty", "geometry"))
-
-```
-
-
-#Map Variables
+# Map Making
+## Map Aesthetics
 ```{r}
 # Finding the min and max of each candidate to scale correctly
-min <- min(c(usmap$trump_pct, usmap$hillary_pct))
-max <- max(c(usmap$trump_pct, usmap$hillary_pct))
+min <- min(c(usmap$trump_pct, usmap$clinton_pct))
+max <- max(c(usmap$trump_pct, usmap$clinton_pct))
 
 # Creating color palettes
-dem_palette <- colorNumeric(palette = "Blues", domain=c(min, max))
-gop_palette <- colorNumeric(palette = "Reds", domain = c(min, max))
-winner_palette <- colorFactor(c("#0000ff", "#ff1a1a"), domain = usmap$pres_winner)
+dem_palette <- colorNumeric(palette = "Blues",
+                            domain=c(min, max))
+
+gop_palette <- colorNumeric(palette = "Reds",
+                            domain = c(min, max))
+
+winner_palette <- colorFactor(c("#0080FF", "#ff1a1a"),
+                              domain = usmap$pres_winner)
 
 
-# Thanks to Dr. McDonald for his guidance on separating the colors.
 top = max(abs(c(min(usmap$trump_pct_margin), max(usmap$trump_pct_margin))))
 nbr = 1001
-br <- seq(-top,top,length.out = nbr)
+br <- seq(-top, top, length.out = nbr)
 testPalette <- colorRampPalette(c("Blue","White","Red" ))(nbr)
 usmap$colors <- testPalette[cut(usmap$trump_pct_margin,br)]
 
@@ -184,9 +147,9 @@ usmap$colors <- testPalette[cut(usmap$trump_pct_margin,br)]
 # Pop-up window for when you click on a county.
 uspopup <- paste("County: ", usmap$county, "<br>",
                  "Winner: ", usmap$pres_winner, "<br>",
-                 "Trump: ", usmap$trump_votes, "votes (", percent(usmap$trump_pct), ") <br>",
-                 "Clinton: ", usmap$hillary_votes, "votes (", percent(usmap$hillary_pct), ") <br>",
-                 "Margin: ", abs(usmap$trump_margin), "votes (", percent(abs( usmap$trump_pct_margin)), ")")
+                 "Trump: ", usmap$trump, "votes (", percent(usmap$trump_pct), ") <br>",
+                 "Clinton: ", usmap$clinton, "votes (", percent(usmap$clinton_pct), ") <br>",
+                 "Margin: ", abs(usmap$trump_margin), "votes (", percent(abs(usmap$trump_pct_margin)), ")")
 
 # Defining Constants to use in the map creation.
 constant_weight <- 1
@@ -194,17 +157,16 @@ constant_fill_opacity <- 0.5
 
 # Highlight settings. We make the weight heavier to make it more obvious when hovering over a county.
 map_highlight <- highlightOptions(
-      weight = 5,
-      color = "#666",
-      dashArray = "",
-      fillOpacity = 0.7,
-      bringToFront = TRUE)
+  weight = 5,
+  color = "#666",
+  dashArray = "",
+  fillOpacity = 0.7,
+  bringToFront = TRUE)
 ```
 
-# Map Creation
-```{r}
-
-# This was suggested in the Computerworld article to correct inconsistent datum.
+## Map Creation
+```{r, eval = F}
+# This next line was suggested in the Computerworld article to correct inconsistent datum.
 usmap <- sf::st_transform(usmap, "+proj=longlat +datum=WGS84")
 
 widget <- leaflet(usmap) %>%
@@ -235,12 +197,11 @@ widget <- leaflet(usmap) %>%
   addPolygons(weight = constant_weight,
               fillOpacity = constant_fill_opacity,
               popup = uspopup, 
-              color = ~dem_palette(usmap$hillary_pct),
+              color = ~dem_palette(usmap$clinton_pct),
               group = "Clinton",
               highlightOptions = map_highlight) %>%
   
   addLegend(position = "bottomleft", colors = c("#0000ff", "#ff1a1a"), labels = c("Clinton", "Trump")) %>%
-  
   
   addLayersControl(
     baseGroups=c("County Winners", "Percent Margin", "Trump", "Clinton"),
